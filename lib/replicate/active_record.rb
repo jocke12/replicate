@@ -276,9 +276,14 @@ module Replicate
       #
       # Returns the [id, object] tuple for the newly replicated objected.
       def create_or_update_replicant(instance, attributes)
+        # destroy old instances with same primary key
+        primary_key_value = attributes[instance.class.primary_key]
+        previous_instance = instance.class.where(instance.class.primary_key =>
+                                                  primary_key_value).first
+        previous_instance.destroy if previous_instance
+
         # write replicated attributes to the instance
         attributes.each do |key, value|
-          next if key == primary_key and not replicate_id
           instance.send :write_attribute, key, value
         end
 
