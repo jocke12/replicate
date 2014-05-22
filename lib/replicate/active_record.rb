@@ -167,7 +167,6 @@ module Replicate
           if reflection.macro == :has_and_belongs_to_many
             dump_has_and_belongs_to_many_replicant(dumper, reflection)
           end
-          __send__(reflection.name).reset # clear to allow GC
         else
           warn "error: #{self.class}##{association} is invalid"
         end
@@ -269,7 +268,7 @@ module Replicate
         replicate_natural_key.each do |attribute_name|
           conditions[attribute_name] = attributes[attribute_name.to_s]
         end
-        find(:first, :conditions => conditions)
+        where(conditions).first
       end
 
       # Update an AR object's attributes and persist to the database without
