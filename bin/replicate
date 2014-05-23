@@ -34,7 +34,6 @@ require 'optparse'
 mode     = nil
 verbose  = false
 quiet    = false
-keep_id  = false
 out      = STDOUT
 force    = false
 
@@ -58,7 +57,6 @@ end
 require 'replicate'
 if defined?(ActiveRecord::Base)
   require 'replicate/active_record'
-  ActiveRecord::Base.replicate_id = keep_id
   ActiveRecord::Base.connection.enable_query_cache!
 end
 

@@ -164,7 +164,7 @@ module Replicate
         if reflection = self.class.reflect_on_association(association)
           objects = __send__(reflection.name)
           dumper.dump(objects)
-          if reflection.macro == :has_and_belongs_to_many
+          if reflection.macro == :has_many && reflection.options[:through]
             dump_has_and_belongs_to_many_replicant(dumper, reflection)
           end
         else
@@ -196,36 +196,6 @@ module Replicate
         @replicate_associations = names.uniq.map { |name| name.to_sym }
       end
 
-      # Compound key used during load to locate existing objects for update.
-      # When no natural key is defined, objects are created new.
-      #
-      # attribute_names - Macro style setter.
-      def replicate_natural_key(*attribute_names)
-        self.replicate_natural_key = attribute_names if attribute_names.any?
-        @replicate_natural_key || superclass.replicate_natural_key
-      end
-
-      # Set the compound key used to locate existing objects for update when
-      # loading. When not set, loading will always create new records.
-      #
-      # attribute_names - Array of attribute name symbols
-      def replicate_natural_key=(attribute_names)
-        @replicate_natural_key = attribute_names
-      end
-
-      # Set or retrieve whether replicated object should keep its original id.
-      # When not set, replicated objects will be created with new id.
-      def replicate_id(boolean=nil)
-        self.replicate_id = boolean unless boolean.nil?
-        @replicate_id.nil? ? superclass.replicate_id : @replicate_id
-      end
-
-      # Set flag for replicating original id.
-      def replicate_id=(boolean)
-        self.replicate_natural_key = [:id] if boolean
-        @replicate_id = boolean
-      end
-
       # Set which, if any, attributes should not be dumped. Also works for
       # associations.
       #
@@ -243,9 +213,7 @@ module Replicate
         @replicate_omit_attributes = attribute_names
       end
 
-      # Load an individual record into the database. If the models defines a
-      # replicate_natural_key then an existing record will be updated if found
-      # instead of a new record being created.
+      # Load an individual record into the database.
       #
       # type  - Model class name as a String.
       # id    - Primary key id of the record on the dump system. This must be
@@ -254,21 +222,13 @@ module Replicate
       #
       # Returns the ActiveRecord object instance for the new record.
       def load_replicant(type, id, attributes)
-        instance = replicate_find_existing_record(attributes) || new
-        create_or_update_replicant instance, attributes
-      end
+        klass = type.classify.constantize
+        primary_key = klass.primary_key
+        primary_key_value = attributes[primary_key.to_s]
 
-      # Locate an existing record using the replicate_natural_key attribute
-      # values.
-      #
-      # Returns the existing record if found, nil otherwise.
-      def replicate_find_existing_record(attributes)
-        return if replicate_natural_key.empty?
-        conditions = {}
-        replicate_natural_key.each do |attribute_name|
-          conditions[attribute_name] = attributes[attribute_name.to_s]
-        end
-        where(conditions).first
+        instance = klass.where(primary_key => primary_key_value).first || new
+
+        create_or_update_replicant instance, attributes
       end
 
       # Update an AR object's attributes and persist to the database without
@@ -276,12 +236,6 @@ module Replicate
       #
       # Returns the [id, object] tuple for the newly replicated objected.
       def create_or_update_replicant(instance, attributes)
-        # destroy old instances with same primary key
-        primary_key_value = attributes[instance.class.primary_key]
-        previous_instance = instance.class.where(instance.class.primary_key =>
-                                                  primary_key_value).first
-        previous_instance.destroy if previous_instance
-
         # write replicated attributes to the instance
         attributes.each do |key, value|
           instance.send :write_attribute, key, value
@@ -360,30 +314,10 @@ module Replicate
       end
     end
 
-    # Backport connection.enable_query_cache! for Rails 2.x
-    require 'active_record/connection_adapters/abstract/query_cache'
-    query_cache = ::ActiveRecord::ConnectionAdapters::QueryCache
-    if !query_cache.methods.any? { |m| m.to_sym == :enable_query_cache! }
-      query_cache.module_eval do
-        attr_writer :query_cache, :query_cache_enabled
-
-        def enable_query_cache!
-          @query_cache ||= {}
-          @query_cache_enabled = true
-        end
-
-        def disable_query_cache!
-          @query_cache_enabled = false
-        end
-      end
-    end
-
     # Load active record and install the extension methods.
     ::ActiveRecord::Base.send :include, InstanceMethods
     ::ActiveRecord::Base.send :extend,  ClassMethods
     ::ActiveRecord::Base.replicate_associations = []
-    ::ActiveRecord::Base.replicate_natural_key  = []
     ::ActiveRecord::Base.replicate_omit_attributes  = []
-    ::ActiveRecord::Base.replicate_id           = false
   end
 end
